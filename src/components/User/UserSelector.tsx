@@ -26,6 +26,13 @@ export function UserSelector({ onSelect }: Props) {
           className="w-full border rounded-lg px-3 py-2 text-sm mb-3 focus:outline-none focus:ring-2 focus:ring-brand-500"
         />
         <div className="space-y-2 max-h-60 overflow-y-auto">
+          {filtered.length === 0 && (
+            <p className="text-center text-sm text-gray-400 py-4">
+              {users.length === 0
+                ? '⚠️ Aucun utilisateur en base — vérifie Supabase'
+                : 'Aucun résultat'}
+            </p>
+          )}
           {filtered.map(u => (
             <button
               key={u.id}
@@ -40,6 +47,18 @@ export function UserSelector({ onSelect }: Props) {
             </button>
           ))}
         </div>
+
+        {users.length === 0 && (
+          <div className="mt-4 pt-4 border-t">
+            <p className="text-xs text-gray-400 mb-2">Continuer sans compte (lecture seule) :</p>
+            <button
+              onClick={() => onSelect({ id: 'guest', name: 'Invité', initials: '?', color: '#999', role: 'user', created_at: '' })}
+              className="w-full py-2 text-sm border rounded-lg hover:bg-gray-50 text-gray-500"
+            >
+              Continuer en tant qu'invité
+            </button>
+          </div>
+        )}
       </div>
     </div>
   )
