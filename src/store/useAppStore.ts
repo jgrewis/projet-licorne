@@ -12,8 +12,10 @@ interface AppState {
   activeBoard: Board | null
 
   // ─── UI ─────────────────────────────────────────────────
-  filters:     FilterState
-  loading:     boolean
+  filters:            FilterState
+  loading:            boolean
+  highlightedElementId: string | null
+  activeView: 'board' | 'passwords'
 
   // ─── Session ────────────────────────────────────────────
   setCurrentUser: (user: User | null) => void
@@ -23,6 +25,8 @@ interface AppState {
   fetchBoards: () => Promise<void>
   fetchUsers:  () => Promise<void>
   setActiveBoard: (board: Board | null) => void
+  setActiveView: (view: 'board' | 'passwords') => void
+  setHighlightedElementId: (id: string | null) => void
 
   // ─── Boards CRUD ─────────────────────────────────────────
   createBoard: (data: Partial<Board>) => Promise<void>
@@ -48,6 +52,7 @@ interface AppState {
   createUser: (data: Partial<User>) => Promise<void>
   updateUser: (id: string, data: Partial<User>) => Promise<void>
   deleteUser: (id: string) => Promise<void>
+  setUserPassword: (userId: string, hash: string | null) => Promise<void>
 
   // ─── Filters ─────────────────────────────────────────────
   setFilter:    (key: keyof FilterState, value: string) => void
@@ -55,15 +60,19 @@ interface AppState {
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
-  boards:      [],
-  users:       [],
-  currentUser: null,
-  activeBoard: null,
-  filters:     EMPTY_FILTER,
-  loading:     false,
+  boards:               [],
+  users:                [],
+  currentUser:          null,
+  activeBoard:          null,
+  filters:              EMPTY_FILTER,
+  loading:              false,
+  highlightedElementId: null,
+  activeView:           'board',
 
-  setCurrentUser: (user) => set({ currentUser: user }),
-  setActiveBoard: (board) => set({ activeBoard: board }),
+  setCurrentUser:          (user) => set({ currentUser: user }),
+  setActiveBoard:          (board) => set({ activeBoard: board, activeView: 'board' }),
+  setActiveView:           (view) => set({ activeView: view }),
+  setHighlightedElementId: (id) => set({ highlightedElementId: id }),
 
   // ─────────────────────────────────────────────────────────
   fetchAll: async () => {
@@ -191,6 +200,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         date_end: el.date_end,
         status: el.status,
         position: (board.elements?.length ?? 0),
+        // linked_element_id non dupliqué intentionnellement
       })
       .select()
       .single()
@@ -276,9 +286,24 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   deleteUser: async (id) => {
+    const user = get().users.find(u => u.id === id)
+    if (user?.role === 'admin') {
+      toast.error('Impossible de supprimer un administrateur')
+      return
+    }
     const { error } = await supabase.from('users').delete().eq('id', id)
     if (error) { toast.error('Erreur suppression'); return }
     toast.success('Utilisateur supprimé')
+    await get().fetchUsers()
+  },
+
+  setUserPassword: async (userId, hash) => {
+    const { error } = await supabase
+      .from('users')
+      .update({ password_hash: hash })
+      .eq('id', userId)
+    if (error) { toast.error('Erreur mise à jour du mot de passe'); return }
+    toast.success(hash ? 'Mot de passe défini' : 'Mot de passe supprimé')
     await get().fetchUsers()
   },
 

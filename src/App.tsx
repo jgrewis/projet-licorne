@@ -4,10 +4,11 @@ import { useAppStore } from './store/useAppStore'
 import { Sidebar } from './components/Layout/Sidebar'
 import { BoardView } from './components/Board/BoardView'
 import { UserSelector } from './components/User/UserSelector'
+import { PasswordManager } from './components/User/PasswordManager'
 import type { User } from './types'
 
 export default function App() {
-  const { fetchAll, setCurrentUser, currentUser } = useAppStore()
+  const { fetchAll, setCurrentUser, currentUser, activeView } = useAppStore()
   const [ready, setReady] = useState(false)
 
   useEffect(() => {
@@ -45,7 +46,7 @@ export default function App() {
       {/* Main layout */}
       <Sidebar />
       <main className="flex-1 flex overflow-hidden">
-        <BoardView />
+        {activeView === 'passwords' ? <PasswordManager /> : <BoardView />}
       </main>
     </div>
   )

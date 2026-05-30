@@ -58,8 +58,18 @@ export function UserManager({ onClose }: Props) {
                 <div className="flex gap-1">
                   <button onClick={() => { setEditId(u.id); setEditForm({ name: u.name, initials: u.initials, role: u.role }) }}
                     className="p-1.5 text-gray-400 hover:text-gray-600 rounded hover:bg-gray-100"><Pencil size={14} /></button>
-                  <button onClick={() => deleteUser(u.id)}
-                    className="p-1.5 text-gray-400 hover:text-red-500 rounded hover:bg-red-50"><Trash2 size={14} /></button>
+                  <button
+                    onClick={() => u.role !== 'admin' && deleteUser(u.id)}
+                    disabled={u.role === 'admin'}
+                    title={u.role === 'admin' ? 'Impossible de supprimer un administrateur' : undefined}
+                    className={`p-1.5 rounded ${
+                      u.role === 'admin'
+                        ? 'text-gray-200 cursor-not-allowed'
+                        : 'text-gray-400 hover:text-red-500 hover:bg-red-50'
+                    }`}
+                  >
+                    <Trash2 size={14} />
+                  </button>
                 </div>
               )}
             </div>

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Plus, RefreshCw, Users } from 'lucide-react'
 import { useAppStore } from '../../store/useAppStore'
 import { FilterBar } from '../Filters/FilterBar'
@@ -11,11 +11,27 @@ type SortKey = 'name' | 'status' | 'date_start' | 'date_end' | 'assigned' | 'res
 type SortDir = 'asc' | 'desc'
 
 export function BoardView() {
-  const { activeBoard, filters, fetchBoards, loading, currentUser } = useAppStore()
-  const [showAdd,     setShowAdd]     = useState(false)
-  const [showUsers,   setShowUsers]   = useState(false)
-  const [sortKey,     setSortKey]     = useState<SortKey>('name')
-  const [sortDir,     setSortDir]     = useState<SortDir>('asc')
+  const { activeBoard, filters, fetchBoards, loading, currentUser, boards, setActiveBoard, setHighlightedElementId } = useAppStore()
+  const [showAdd,   setShowAdd]   = useState(false)
+  const [showUsers, setShowUsers] = useState(false)
+  const [sortKey,   setSortKey]   = useState<SortKey>('name')
+  const [sortDir,   setSortDir]   = useState<SortDir>('asc')
+
+  // ── Navigation par hash URL (#board=...&element=...) ──────────────────────
+  useEffect(() => {
+    const hash = window.location.hash.slice(1) // retire le '#'
+    if (!hash) return
+    const urlParams = new URLSearchParams(hash)
+    const boardId   = urlParams.get('board')
+    const elementId = urlParams.get('element')
+    if (boardId && boards.length > 0) {
+      const targetBoard = boards.find(b => b.id === boardId)
+      if (targetBoard) {
+        setActiveBoard(targetBoard)
+        if (elementId) setHighlightedElementId(elementId)
+      }
+    }
+  }, [boards]) // se déclenche une fois quand les boards sont chargés
 
   const handleSort = (key: SortKey) => {
     if (sortKey === key) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
@@ -107,7 +123,7 @@ export function BoardView() {
 
       {/* Table */}
       <div className="flex-1 overflow-auto">
-        <table className="w-full min-w-[900px]">
+        <table className="w-full min-w-[1050px]">
           <thead className="bg-gray-50 border-b sticky top-0 z-10">
             <tr>
               <th onClick={() => handleSort('name')}
@@ -134,13 +150,16 @@ export function BoardView() {
                 className="text-left py-2.5 px-3 text-xs font-semibold text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100">
                 Statut <SortIcon k="status" />
               </th>
+              <th className="text-left py-2.5 px-3 text-xs font-semibold text-gray-500 uppercase tracking-wider w-40">
+                Lien
+              </th>
               <th className="py-2.5 px-3 w-32" />
             </tr>
           </thead>
           <tbody className="bg-white divide-y-0">
             {elements.length === 0 ? (
               <tr>
-                <td colSpan={7} className="py-16 text-center text-gray-400">
+                <td colSpan={8} className="py-16 text-center text-gray-400">
                   <p className="text-3xl mb-2">📭</p>
                   <p>Aucun élément trouvé</p>
                   {Object.values(filters).some(v => v) && (
@@ -157,8 +176,8 @@ export function BoardView() {
         </table>
       </div>
 
-      {showAdd    && <ElementModal mode="element" onClose={() => setShowAdd(false)} />}
-      {showUsers  && <UserManager onClose={() => setShowUsers(false)} />}
+      {showAdd   && <ElementModal mode="element" onClose={() => setShowAdd(false)} />}
+      {showUsers && <UserManager onClose={() => setShowUsers(false)} />}
     </div>
   )
 }

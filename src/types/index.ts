@@ -24,6 +24,7 @@ export interface User {
   initials: string
   color: string
   role: 'admin' | 'user'
+  password_hash?: string | null
   created_at: string
 }
 
@@ -56,6 +57,14 @@ export interface SubElement {
   created_at: string
 }
 
+// ─── Aperçu d'un élément lié (colonne Lien) ─────────────────────────────────
+export interface LinkedElementPreview {
+  id: string
+  name: string
+  board_id: string
+  board?: { id: string; name: string; color: string } | null
+}
+
 // ─── Éléments ────────────────────────────────────────────────────────────────
 export interface Element {
   id: string
@@ -69,6 +78,8 @@ export interface Element {
   date_end: string | null
   status: Status
   position: number
+  linked_element_id: string | null
+  linked_element?: LinkedElementPreview | null
   sub_elements?: SubElement[]
   comments?: Comment[]
   created_at: string

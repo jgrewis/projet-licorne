@@ -1,12 +1,12 @@
 import { useState } from 'react'
-import { Plus, Trash2, Pencil, X, Check } from 'lucide-react'
+import { Plus, Trash2, Pencil, X, Check, KeyRound } from 'lucide-react'
 import { useAppStore } from '../../store/useAppStore'
 import type { Board } from '../../types'
 
 const COLORS = ['#4169e1','#e14169','#41e169','#e1a841','#9b41e1','#41c8e1']
 
 export function Sidebar() {
-  const { boards, activeBoard, setActiveBoard, createBoard, updateBoard, deleteBoard, currentUser } = useAppStore()
+  const { boards, activeBoard, setActiveBoard, createBoard, updateBoard, deleteBoard, currentUser, activeView, setActiveView } = useAppStore()
   const [creating, setCreating] = useState(false)
   const [newName,  setNewName]  = useState('')
   const [newColor, setNewColor] = useState(COLORS[0])
@@ -108,6 +108,24 @@ export function Sidebar() {
           )
         )}
       </nav>
+
+      {/* Admin tools */}
+      {currentUser?.role === 'admin' && (
+        <div className="px-2 pb-2 border-t border-gray-700 pt-2">
+          <p className="px-2 py-1 text-xs font-semibold text-gray-500 uppercase tracking-wider mb-0.5">Administration</p>
+          <button
+            onClick={() => setActiveView('passwords')}
+            className={`flex items-center gap-2 px-3 py-2 rounded-lg w-full text-sm transition-colors ${
+              activeView === 'passwords'
+                ? 'bg-gray-700 text-white'
+                : 'text-gray-300 hover:bg-gray-800'
+            }`}
+          >
+            <KeyRound size={14} />
+            Mots de passe
+          </button>
+        </div>
+      )}
 
       {/* Current user */}
       <div className="px-4 py-3 border-t border-gray-700 text-xs text-gray-400">

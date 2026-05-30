@@ -1,39 +1,73 @@
-import { useState } from 'react'
-import { ChevronRight, ChevronDown, MessageSquare, Pencil, Trash2, Copy, Plus } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { ChevronRight, ChevronDown, MessageSquare, Pencil, Trash2, Copy, Plus, Link2, ExternalLink } from 'lucide-react'
 import { useAppStore } from '../../store/useAppStore'
 import { StatusBadge } from '../Common/StatusBadge'
 import { UserAvatar } from '../Common/UserAvatar'
 import { MessagePanel } from '../Messages/MessagePanel'
 import { ElementModal } from './ElementModal'
+import { LinkPicker } from './LinkPicker'
 import { SubRow } from './SubRow'
 import { format } from 'date-fns'
 import { fr } from 'date-fns/locale'
 import type { Element, Status } from '../../types'
 
 interface Props {
-  element: Element
+  element:   Element
   isVisible: boolean
 }
 
 export function BoardRow({ element, isVisible }: Props) {
-  const { updateElement, deleteElement, duplicateElement } = useAppStore()
-  const [expanded,     setExpanded]     = useState(false)
-  const [showMessages, setShowMessages] = useState(false)
-  const [showEdit,     setShowEdit]     = useState(false)
-  const [showAddSub,   setShowAddSub]   = useState(false)
-  const [showDupMenu,  setShowDupMenu]  = useState(false)
+  const { updateElement, deleteElement, duplicateElement, highlightedElementId, setHighlightedElementId, setActiveBoard, boards } = useAppStore()
+  const [expanded,       setExpanded]      = useState(false)
+  const [showMessages,   setShowMessages]  = useState(false)
+  const [showEdit,       setShowEdit]      = useState(false)
+  const [showAddSub,     setShowAddSub]    = useState(false)
+  const [showDupMenu,    setShowDupMenu]   = useState(false)
+  const [showLinkPicker, setShowLinkPicker] = useState(false)
+
+  const rowRef        = useRef<HTMLTableRowElement>(null)
+  const isHighlighted = highlightedElementId === element.id
+
+  // Scroll + mise en surbrillance si cet élément est ciblé par un lien
+  useEffect(() => {
+    if (isHighlighted && rowRef.current) {
+      rowRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      const timer = setTimeout(() => setHighlightedElementId(null), 2500)
+      return () => clearTimeout(timer)
+    }
+  }, [isHighlighted])
 
   const hasSubs = (element.sub_elements?.length ?? 0) > 0
 
   const fmt = (d: string | null) =>
     d ? format(new Date(d), 'dd MMM', { locale: fr }) : '—'
 
+  // Résoudre l'élément lié et son board entièrement depuis le store (pas de join Supabase)
+  const linkedBoard = element.linked_element_id
+    ? boards.find(b => b.elements?.some(e => e.id === element.linked_element_id)) ?? null
+    : null
+  const linkedElement = linkedBoard
+    ? linkedBoard.elements?.find(e => e.id === element.linked_element_id) ?? null
+    : null
+
+  // Navigation vers l'élément lié dans son tableau
+  const handleNavigateToLinked = () => {
+    if (!linkedElement || !linkedBoard) return
+    setActiveBoard(linkedBoard)
+    setHighlightedElementId(linkedElement.id)
+    window.history.replaceState(null, '', `#board=${linkedBoard.id}&element=${linkedElement.id}`)
+  }
+
   if (!isVisible) return null
 
   return (
     <>
       {/* Main row */}
-      <tr className="hover:bg-gray-50 border-b border-gray-100 group">
+      <tr
+        ref={rowRef}
+        className={`border-b border-gray-100 group transition-colors duration-300
+          ${isHighlighted ? 'bg-amber-50 ring-1 ring-inset ring-amber-300' : 'hover:bg-gray-50'}`}
+      >
         {/* Expand + Name */}
         <td className="py-2.5 px-4">
           <div className="flex items-center gap-2">
@@ -73,6 +107,37 @@ export function BoardRow({ element, isVisible }: Props) {
           />
         </td>
 
+        {/* Lien inter-tableaux */}
+        <td className="py-2.5 px-3 min-w-[140px]">
+          {linkedElement ? (
+            <button
+              onClick={handleNavigateToLinked}
+              title={`Aller vers "${linkedElement.name}" dans ${linkedBoard?.name ?? '...'}`}
+              className="flex items-center gap-1.5 max-w-[160px] group/link"
+            >
+              {linkedBoard?.color && (
+                <div
+                  className="w-2 h-2 rounded-full flex-shrink-0"
+                  style={{ backgroundColor: linkedBoard.color }}
+                />
+              )}
+              <span className="text-xs text-gray-700 group-hover/link:text-brand-600 truncate transition-colors">
+                {linkedElement.name}
+              </span>
+              <ExternalLink size={10} className="flex-shrink-0 text-gray-300 group-hover/link:text-brand-500 transition-colors" />
+            </button>
+          ) : (
+            <button
+              onClick={() => setShowLinkPicker(true)}
+              title="Lier à une autre ligne"
+              className="flex items-center gap-1 text-xs text-gray-300 hover:text-brand-500 opacity-0 group-hover:opacity-100 transition-all"
+            >
+              <Link2 size={12} />
+              <span>Lier</span>
+            </button>
+          )}
+        </td>
+
         {/* Actions */}
         <td className="py-2.5 px-3">
           <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -80,6 +145,12 @@ export function BoardRow({ element, isVisible }: Props) {
               title="Ajouter un sous-élément"
               className="p-1.5 rounded hover:bg-gray-200 text-gray-400 hover:text-gray-600">
               <Plus size={13} />
+            </button>
+            <button onClick={() => setShowLinkPicker(true)}
+              title={linkedElement ? 'Modifier le lien' : 'Lier à une autre ligne'}
+              className={`p-1.5 rounded hover:bg-gray-200 transition-colors
+                ${linkedElement ? 'text-brand-500' : 'text-gray-400 hover:text-gray-600'}`}>
+              <Link2 size={13} />
             </button>
             <button onClick={() => setShowMessages(true)}
               className="p-1.5 rounded hover:bg-gray-200 text-gray-400 hover:text-gray-600">
@@ -134,6 +205,13 @@ export function BoardRow({ element, isVisible }: Props) {
       )}
       {showAddSub && (
         <ElementModal mode="sub_element" parentId={element.id} onClose={() => { setShowAddSub(false); setExpanded(true) }} />
+      )}
+      {showLinkPicker && (
+        <LinkPicker
+          currentElementId={element.id}
+          currentBoardId={element.board_id}
+          onClose={() => setShowLinkPicker(false)}
+        />
       )}
     </>
   )
