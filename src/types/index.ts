@@ -24,7 +24,9 @@ export interface User {
   initials: string
   color: string
   role: 'admin' | 'user'
-  password_hash?: string | null
+  email?: string | null
+  auth_id?: string | null
+  password_hash?: string | null // déprécié — remplacé par Supabase Auth
   created_at: string
 }
 

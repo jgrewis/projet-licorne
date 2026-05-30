@@ -1,12 +1,12 @@
 import { useState } from 'react'
-import { Plus, Trash2, Pencil, X, Check, KeyRound } from 'lucide-react'
+import { Plus, Trash2, Pencil, X, Check, KeyRound, LogOut } from 'lucide-react'
 import { useAppStore } from '../../store/useAppStore'
 import type { Board } from '../../types'
 
 const COLORS = ['#4169e1','#e14169','#41e169','#e1a841','#9b41e1','#41c8e1']
 
 export function Sidebar() {
-  const { boards, activeBoard, setActiveBoard, createBoard, updateBoard, deleteBoard, currentUser, activeView, setActiveView } = useAppStore()
+  const { boards, activeBoard, setActiveBoard, createBoard, updateBoard, deleteBoard, currentUser, activeView, setActiveView, signOut } = useAppStore()
   const [creating, setCreating] = useState(false)
   const [newName,  setNewName]  = useState('')
   const [newColor, setNewColor] = useState(COLORS[0])
@@ -128,8 +128,17 @@ export function Sidebar() {
       )}
 
       {/* Current user */}
-      <div className="px-4 py-3 border-t border-gray-700 text-xs text-gray-400">
-        Connecté en tant que <span className="text-white font-medium">{currentUser?.name ?? '—'}</span>
+      <div className="px-4 py-3 border-t border-gray-700 flex items-center justify-between gap-2">
+        <div className="text-xs text-gray-400 truncate">
+          Connecté en tant que <span className="text-white font-medium">{currentUser?.name ?? '—'}</span>
+        </div>
+        <button
+          onClick={() => signOut()}
+          title="Se déconnecter"
+          className="p-1.5 rounded text-gray-400 hover:text-white hover:bg-gray-800 shrink-0"
+        >
+          <LogOut size={14} />
+        </button>
       </div>
     </aside>
   )

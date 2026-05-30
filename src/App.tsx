@@ -3,21 +3,22 @@ import { Toaster } from 'react-hot-toast'
 import { useAppStore } from './store/useAppStore'
 import { Sidebar } from './components/Layout/Sidebar'
 import { BoardView } from './components/Board/BoardView'
-import { UserSelector } from './components/User/UserSelector'
+import { LoginScreen } from './components/User/LoginScreen'
 import { PasswordManager } from './components/User/PasswordManager'
-import type { User } from './types'
 
 export default function App() {
-  const { fetchAll, setCurrentUser, currentUser, activeView } = useAppStore()
+  const { bootstrapSession, fetchAll, currentUser, activeView } = useAppStore()
   const [ready, setReady] = useState(false)
 
+  // Restaure la session JWT au démarrage (Supabase Auth persiste en localStorage)
   useEffect(() => {
-    fetchAll().then(() => setReady(true))
+    bootstrapSession().finally(() => setReady(true))
   }, [])
 
-  const handleSelect = (user: User) => {
-    setCurrentUser(user)
-  }
+  // Charge les données dès qu'un utilisateur est authentifié
+  useEffect(() => {
+    if (currentUser) fetchAll()
+  }, [currentUser?.id])
 
   if (!ready) {
     return (
@@ -30,6 +31,8 @@ export default function App() {
     )
   }
 
+  if (!currentUser) return <LoginScreen />
+
   return (
     <div className="h-screen flex overflow-hidden bg-white">
       <Toaster
@@ -40,10 +43,6 @@ export default function App() {
         }}
       />
 
-      {/* Session selector */}
-      {!currentUser && <UserSelector onSelect={handleSelect} />}
-
-      {/* Main layout */}
       <Sidebar />
       <main className="flex-1 flex overflow-hidden">
         {activeView === 'passwords' ? <PasswordManager /> : <BoardView />}

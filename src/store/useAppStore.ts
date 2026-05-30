@@ -68,8 +68,11 @@ interface AppState {
   highlightedElementId: string | null
   activeView: 'board' | 'passwords'
 
-  // ─── Session ────────────────────────────────────────────
+  // ─── Session / Auth ─────────────────────────────────────
   setCurrentUser: (user: User | null) => void
+  signIn:  (email: string, password: string) => Promise<boolean>
+  signOut: () => Promise<void>
+  bootstrapSession: () => Promise<void>
 
   // ─── Fetch ──────────────────────────────────────────────
   fetchAll:    () => Promise<void>
@@ -121,6 +124,30 @@ export const useAppStore = create<AppState>((set, get) => ({
   activeView:           'board',
 
   setCurrentUser:          (user) => set({ currentUser: user }),
+
+  signIn: async (email, password) => {
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password })
+    if (error || !data.user) { toast.error('Identifiants invalides'); return false }
+    const { data: profile } = await supabase
+      .from('users').select('*').eq('auth_id', data.user.id).single()
+    if (!profile) { toast.error('Aucun profil lié à ce compte'); await supabase.auth.signOut(); return false }
+    set({ currentUser: profile as User })
+    return true
+  },
+
+  signOut: async () => {
+    await supabase.auth.signOut()
+    set({ currentUser: null, boards: [], activeBoard: null })
+  },
+
+  bootstrapSession: async () => {
+    const { data: { session } } = await supabase.auth.getSession()
+    if (!session) { set({ currentUser: null }); return }
+    const { data: profile } = await supabase
+      .from('users').select('*').eq('auth_id', session.user.id).single()
+    set({ currentUser: (profile as User) ?? null })
+  },
+
   setActiveBoard:          (board) => set({ activeBoard: board, activeView: 'board' }),
   setActiveView:           (view) => set({ activeView: view }),
   setHighlightedElementId: (id) => set({ highlightedElementId: id }),
