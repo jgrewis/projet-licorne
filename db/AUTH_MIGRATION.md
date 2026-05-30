@@ -8,14 +8,19 @@ serveur. Séquencé pour **ne jamais casser la prod**.
 
 | # | Acteur | Action | Risque |
 |---|--------|--------|--------|
-| 1 | **Toi** | Exécuter `db/01_auth_setup.sql` dans Supabase > SQL Editor | Aucun (additif) |
+| 1 | **Toi** | Exécuter `db/01_auth_setup.sql` (auth_id, trigger, helpers) | Aucun (additif) |
+| 1b | **Toi** | Exécuter `db/01b_authenticated_policies.sql` (accès rôle `authenticated`, coexiste avec anon) | Aucun (additif) |
 | 2 | **Toi** | Auth > Providers > Email : activer Email, **désactiver « Confirm email »** | Aucun |
 | 3 | **Toi** | Renseigner les emails des profils existants (voir bas de `01_auth_setup.sql`) | Aucun |
 | 4 | **Toi** | Auth > Users > Add user : créer 1 compte par personne, **même email** que le profil. Le trigger lie `auth_id` automatiquement | Aucun |
-| 5 | **Moi** | Merger `feat/supabase-auth` → déployer (login email+mdp, session JWT) | Faible — RLS encore ouverte, app marche |
+| 5 | **Moi** | Merger `feat/supabase-auth` → déployer (login email+mdp, session JWT) | Faible — anon ET authenticated marchent |
 | 6 | **Nous** | Tester : login avec un compte réel, vérifier CRUD | — |
-| 7 | **Toi** | Exécuter `db/02_rls_cutover.sql` (ferme la RLS) | **Bascule** — à faire après 6 OK |
+| 7 | **Toi** | Exécuter `db/02_rls_cutover.sql` (retire l'accès anon → ferme le trou) | **Bascule** — après 6 OK |
 | 8 | **Moi** | Décommenter le `drop column password_hash` + retirer `crypto.ts`/`PasswordManager` | Nettoyage |
+
+> ⚠️ Important (découvert en test live) : les policies `anon_all_*` sont `TO anon`
+> seulement. Sans l'étape **1b**, un utilisateur connecté (rôle `authenticated`)
+> ne voit **aucune** donnée. 1b est donc obligatoire avant le déploiement.
 
 ## Vérifications
 

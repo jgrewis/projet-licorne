@@ -1,13 +1,15 @@
 -- ============================================================
 -- ÉTAPE 2 — Fermeture de la RLS (BASCULE / CUTOVER)
 -- À exécuter SEULEMENT quand :
---   (a) l'app déployée utilise déjà le login Supabase Auth
---       (branche feat/supabase-auth mergée + déployée), ET
---   (b) au moins un compte admin Auth est créé et testé.
--- ⚠️ Avant ça, exécuter ce script COUPERAIT l'app (rôle anon).
+--   (a) 01_auth_setup.sql + 01b_authenticated_policies.sql sont passés,
+--   (b) l'app déployée utilise déjà le login Supabase Auth, ET
+--   (c) un compte admin Auth est créé et testé (login + CRUD OK).
+-- ⚠️ Ce script retire l'accès `anon` : l'ancienne app (sans login)
+--    cesse de fonctionner. À faire APRÈS le déploiement de la nouvelle.
+-- Les policies `authenticated` (étape 1b) restent en place.
 -- ============================================================
 
--- 1) Supprimer les policies permissives anon (la faille)
+-- Supprimer les policies permissives anon (LA faille : base ouverte à tous)
 do $$ declare r record; begin
   for r in
     select policyname, tablename from pg_policies
@@ -17,44 +19,20 @@ do $$ declare r record; begin
   end loop;
 end $$;
 
--- 2) Activer RLS sur toutes les tables métier
+-- S'assurer que la RLS est bien active partout
 alter table public.users        enable row level security;
 alter table public.boards       enable row level security;
 alter table public.elements     enable row level security;
 alter table public.sub_elements enable row level security;
 alter table public.comments     enable row level security;
 
--- 3) Données projet : lecture + écriture réservées aux utilisateurs authentifiés
-do $$ declare t text; begin
-  foreach t in array array['boards','elements','sub_elements','comments']
-  loop
-    execute format(
-      'create policy auth_rw_%1$s on public.%1$I
-         for all to authenticated using (true) with check (true)', t);
-  end loop;
-end $$;
-
--- 4) Table users :
---    - lecture : tout utilisateur authentifié (besoin des noms/avatars/assignations)
---    - écriture (insert/update/delete) : admin uniquement
---    - chaque utilisateur peut mettre à jour SON propre profil
-create policy users_read on public.users
-  for select to authenticated using (true);
-
-create policy users_admin_write on public.users
-  for all to authenticated
-  using (public.is_admin()) with check (public.is_admin());
-
-create policy users_self_update on public.users
-  for update to authenticated
-  using (auth_id = auth.uid()) with check (auth_id = auth.uid());
-
--- 5) Nettoyage : l'ancien système de mot de passe maison n'a plus lieu d'être.
---    (À exécuter une fois la bascule validée.)
+-- Nettoyage : l'ancien système de mot de passe maison est obsolète
+-- (à décommenter une fois la bascule validée et le code nettoyé) :
 -- alter table public.users drop column if exists password_hash;
 
 -- ============================================================
--- VÉRIFICATION
+-- VÉRIFICATION (plus aucune policy `anon` ne doit subsister) :
 --   select tablename, policyname, roles, cmd
 --   from pg_policies where schemaname='public' order by tablename;
+-- Test : une requête SANS token doit désormais renvoyer [] / 401.
 -- ============================================================
