@@ -4,6 +4,57 @@ import type { Board, Element, SubElement, User, Comment, FilterState } from '../
 import { EMPTY_FILTER } from '../types'
 import toast from 'react-hot-toast'
 
+// ─── Sélections PostgREST (jointures users / board lié) ────────────────────────
+const EL_SELECT =
+  '*, assigned_user:users!elements_assigned_to_fkey(*), responsible_user:users!elements_responsible_fkey(*)'
+const SUB_SELECT =
+  '*, assigned_user:users!sub_elements_assigned_to_fkey(*), responsible_user:users!sub_elements_responsible_fkey(*), ref_board:boards!sub_elements_ref_board_id_fkey(id,name,color)'
+
+// ─── Helpers immuables sur l'arbre boards → elements → sub_elements ────────────
+const mapEl = (boards: Board[], id: string, fn: (e: Element) => Element): Board[] =>
+  boards.map(b => ({ ...b, elements: b.elements?.map(e => (e.id === id ? fn(e) : e)) }))
+
+const mapSub = (boards: Board[], id: string, fn: (s: SubElement) => SubElement): Board[] =>
+  boards.map(b => ({
+    ...b,
+    elements: b.elements?.map(e => ({
+      ...e,
+      sub_elements: e.sub_elements?.map(s => (s.id === id ? fn(s) : s)),
+    })),
+  }))
+
+const removeEl = (boards: Board[], id: string): Board[] =>
+  boards.map(b => ({ ...b, elements: b.elements?.filter(e => e.id !== id) }))
+
+const removeSub = (boards: Board[], id: string): Board[] =>
+  boards.map(b => ({
+    ...b,
+    elements: b.elements?.map(e => ({ ...e, sub_elements: e.sub_elements?.filter(s => s.id !== id) })),
+  }))
+
+const addEl = (boards: Board[], boardId: string, el: Element): Board[] =>
+  boards.map(b => (b.id === boardId ? { ...b, elements: [...(b.elements ?? []), el] } : b))
+
+const addSub = (boards: Board[], elementId: string, sub: SubElement): Board[] =>
+  boards.map(b => ({
+    ...b,
+    elements: b.elements?.map(e =>
+      e.id === elementId ? { ...e, sub_elements: [...(e.sub_elements ?? []), sub] } : e,
+    ),
+  }))
+
+// activeBoard est une copie : on le resynchronise sur le nouveau tableau par id.
+const syncActive = (active: Board | null, boards: Board[]): Board | null =>
+  active ? boards.find(b => b.id === active.id) ?? null : boards[0] ?? null
+
+// Enrichit un patch avec les objets user résolus (pour MAJ instantanée des avatars).
+const withUsers = (data: Partial<Element & SubElement>, users: User[]) => {
+  const patch: Record<string, unknown> = { ...data }
+  if ('assigned_to' in data) patch.assigned_user = users.find(u => u.id === data.assigned_to) ?? null
+  if ('responsible' in data) patch.responsible_user = users.find(u => u.id === data.responsible) ?? null
+  return patch as Partial<Element & SubElement>
+}
+
 interface AppState {
   // ─── Data ───────────────────────────────────────────────
   boards:      Board[]
@@ -115,12 +166,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         })),
     }))
 
-    set(state => ({
-      boards: sorted,
-      activeBoard: state.activeBoard
-        ? sorted.find(b => b.id === state.activeBoard!.id) ?? state.activeBoard
-        : sorted[0] ?? null,
-    }))
+    set(state => ({ boards: sorted, activeBoard: syncActive(state.activeBoard, sorted) }))
   },
 
   fetchUsers: async () => {
@@ -131,56 +177,79 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   // ─── Boards ──────────────────────────────────────────────
   createBoard: async (data) => {
-    const { boards } = get()
     const { data: created, error } = await supabase
       .from('boards')
-      .insert({ ...data, position: boards.length })
+      .insert({ ...data, position: get().boards.length })
       .select()
       .single()
-    if (error) { toast.error('Erreur création tableau'); return }
+    if (error || !created) { toast.error('Erreur création tableau'); return }
     toast.success('Tableau créé')
-    await get().fetchBoards()
-    set({ activeBoard: created })
+    const board: Board = { ...created, elements: [] }
+    set(state => ({ boards: [...state.boards, board], activeBoard: board }))
   },
 
   updateBoard: async (id, data) => {
+    const prev = { boards: get().boards, activeBoard: get().activeBoard }
+    set(state => {
+      const boards = state.boards.map(b => (b.id === id ? { ...b, ...data } : b))
+      return { boards, activeBoard: syncActive(state.activeBoard, boards) }
+    })
     const { error } = await supabase.from('boards').update(data).eq('id', id)
-    if (error) { toast.error('Erreur mise à jour'); return }
+    if (error) { set(prev); toast.error('Erreur mise à jour'); return }
     toast.success('Tableau mis à jour')
-    await get().fetchBoards()
   },
 
   deleteBoard: async (id) => {
+    const prev = { boards: get().boards, activeBoard: get().activeBoard }
+    set(state => {
+      const boards = state.boards.filter(b => b.id !== id)
+      const active =
+        state.activeBoard?.id === id ? boards[0] ?? null : syncActive(state.activeBoard, boards)
+      return { boards, activeBoard: active }
+    })
     const { error } = await supabase.from('boards').delete().eq('id', id)
-    if (error) { toast.error('Erreur suppression'); return }
+    if (error) { set(prev); toast.error('Erreur suppression'); return }
     toast.success('Tableau supprimé')
-    await get().fetchBoards()
   },
 
   // ─── Elements ────────────────────────────────────────────
   createElement: async (data) => {
     const board = get().activeBoard
     if (!board) return
-    const elems = board.elements ?? []
-    const { error } = await supabase
+    const { data: created, error } = await supabase
       .from('elements')
-      .insert({ ...data, board_id: board.id, position: elems.length })
-    if (error) { toast.error('Erreur création élément'); return }
+      .insert({ ...data, board_id: board.id, position: board.elements?.length ?? 0 })
+      .select(EL_SELECT)
+      .single()
+    if (error || !created) { toast.error('Erreur création élément'); return }
     toast.success('Élément créé')
-    await get().fetchBoards()
+    const el: Element = { ...(created as Element), sub_elements: [] }
+    set(state => {
+      const boards = addEl(state.boards, board.id, el)
+      return { boards, activeBoard: syncActive(state.activeBoard, boards) }
+    })
   },
 
   updateElement: async (id, data) => {
+    const prev = { boards: get().boards, activeBoard: get().activeBoard }
+    const patch = withUsers(data, get().users)
+    set(state => {
+      const boards = mapEl(state.boards, id, e => ({ ...e, ...patch }))
+      return { boards, activeBoard: syncActive(state.activeBoard, boards) }
+    })
     const { error } = await supabase.from('elements').update(data).eq('id', id)
-    if (error) { toast.error('Erreur mise à jour'); return }
-    await get().fetchBoards()
+    if (error) { set(prev); toast.error('Erreur mise à jour') }
   },
 
   deleteElement: async (id) => {
+    const prev = { boards: get().boards, activeBoard: get().activeBoard }
+    set(state => {
+      const boards = removeEl(state.boards, id)
+      return { boards, activeBoard: syncActive(state.activeBoard, boards) }
+    })
     const { error } = await supabase.from('elements').delete().eq('id', id)
-    if (error) { toast.error('Erreur suppression'); return }
+    if (error) { set(prev); toast.error('Erreur suppression'); return }
     toast.success('Élément supprimé')
-    await get().fetchBoards()
   },
 
   duplicateElement: async (id, withSubs) => {
@@ -199,17 +268,18 @@ export const useAppStore = create<AppState>((set, get) => ({
         date_start: el.date_start,
         date_end: el.date_end,
         status: el.status,
-        position: (board.elements?.length ?? 0),
+        position: board.elements?.length ?? 0,
         // linked_element_id non dupliqué intentionnellement
       })
-      .select()
+      .select(EL_SELECT)
       .single()
 
-    if (error) { toast.error('Erreur duplication'); return }
+    if (error || !newEl) { toast.error('Erreur duplication'); return }
 
+    let subs: SubElement[] = []
     if (withSubs && el.sub_elements?.length) {
-      const subs = el.sub_elements.map((s, i) => ({
-        element_id: newEl.id,
+      const payload = el.sub_elements.map((s, i) => ({
+        element_id: (newEl as Element).id,
         name: s.name,
         assigned_to: s.assigned_to,
         responsible: s.responsible,
@@ -219,32 +289,54 @@ export const useAppStore = create<AppState>((set, get) => ({
         ref_board_id: s.ref_board_id,
         position: i,
       }))
-      await supabase.from('sub_elements').insert(subs)
+      const { data: created } = await supabase.from('sub_elements').insert(payload).select(SUB_SELECT)
+      subs = (created as SubElement[]) ?? []
     }
 
     toast.success('Élément dupliqué')
-    await get().fetchBoards()
+    const el2: Element = { ...(newEl as Element), sub_elements: subs }
+    set(state => {
+      const boards = addEl(state.boards, board.id, el2)
+      return { boards, activeBoard: syncActive(state.activeBoard, boards) }
+    })
   },
 
   // ─── SubElements ─────────────────────────────────────────
   createSubElement: async (data) => {
-    const { error } = await supabase.from('sub_elements').insert(data)
-    if (error) { toast.error('Erreur création sous-élément'); return }
+    const { data: created, error } = await supabase
+      .from('sub_elements')
+      .insert(data)
+      .select(SUB_SELECT)
+      .single()
+    if (error || !created) { toast.error('Erreur création sous-élément'); return }
     toast.success('Sous-élément créé')
-    await get().fetchBoards()
+    const sub = created as SubElement
+    set(state => {
+      const boards = addSub(state.boards, sub.element_id, sub)
+      return { boards, activeBoard: syncActive(state.activeBoard, boards) }
+    })
   },
 
   updateSubElement: async (id, data) => {
+    const prev = { boards: get().boards, activeBoard: get().activeBoard }
+    const patch = withUsers(data, get().users)
+    set(state => {
+      const boards = mapSub(state.boards, id, s => ({ ...s, ...patch }))
+      return { boards, activeBoard: syncActive(state.activeBoard, boards) }
+    })
     const { error } = await supabase.from('sub_elements').update(data).eq('id', id)
-    if (error) { toast.error('Erreur mise à jour'); return }
-    await get().fetchBoards()
+    if (error) { set(prev); toast.error('Erreur mise à jour') }
   },
 
   deleteSubElement: async (id) => {
+    const prev = { boards: get().boards, activeBoard: get().activeBoard }
+    set(state => {
+      const boards = removeSub(state.boards, id)
+      return { boards, activeBoard: syncActive(state.activeBoard, boards) }
+    })
     const { error } = await supabase.from('sub_elements').delete().eq('id', id)
-    if (error) { toast.error('Erreur suppression'); return }
+    if (error) { set(prev); toast.error('Erreur suppression'); return }
     toast.success('Sous-élément supprimé')
-    await get().fetchBoards()
   },
 
   // ─── Comments ────────────────────────────────────────────
